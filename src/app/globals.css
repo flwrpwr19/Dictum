@@ -1,0 +1,141 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Dictum "voice ribbon" palette — a Lattice nocturnal base with a
+     signature iris → violet → cyan spectrum that maps to sound. */
+  --color-dictum-iris: var(--dictum-iris);
+  --color-dictum-violet: var(--dictum-violet);
+  --color-dictum-cyan: var(--dictum-cyan);
+  --color-dictum-blush: var(--dictum-blush);
+  --color-dictum-amber: var(--dictum-amber);
+  --color-dictum-panel: var(--dictum-panel);
+  --color-dictum-border: var(--dictum-border);
+}
+
+:root,
+.dark {
+  /* Default to dark mode / nocturnal theme */
+  --background: #0b0c10; /* near-black ink */
+  --foreground: #f4f4f7;
+  --card: #121319;
+  --card-foreground: #f4f4f7;
+  --popover: rgba(18, 19, 25, 0.72);
+  --popover-foreground: #f4f4f7;
+  --primary: #8b7bff; /* iris */
+  --primary-foreground: #0b0c10;
+  --secondary: rgba(255, 255, 255, 0.05);
+  --secondary-foreground: #f4f4f7;
+  --muted: rgba(255, 255, 255, 0.05);
+  --muted-foreground: #8a90a4;
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #f4f4f7;
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: rgba(139, 123, 255, 0.45);
+  --radius: 0.75rem;
+
+  /* Dictum specific */
+  --dictum-iris: #8b7bff;
+  --dictum-violet: #b69bff;
+  --dictum-cyan: #67e8f9;
+  --dictum-blush: #f4a6d7;
+  --dictum-amber: #f5c97b;
+  --dictum-panel: rgba(255, 255, 255, 0.03);
+  --dictum-border: rgba(255, 255, 255, 0.08);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .text-voice-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      100deg,
+      var(--dictum-iris),
+      var(--dictum-violet),
+      var(--dictum-cyan)
+    );
+  }
+
+  /* Soft conic aurora used behind the dictation pill + hero orb */
+  .dictum-aurora {
+    background:
+      radial-gradient(60% 60% at 50% 40%, rgba(139, 123, 255, 0.22), transparent 70%),
+      conic-gradient(
+        from 120deg at 50% 50%,
+        rgba(139, 123, 255, 0.35),
+        rgba(182, 155, 255, 0.18),
+        rgba(103, 232, 249, 0.25),
+        rgba(244, 166, 215, 0.16),
+        rgba(139, 123, 255, 0.35)
+      );
+  }
+}
+
+@keyframes dictum-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}

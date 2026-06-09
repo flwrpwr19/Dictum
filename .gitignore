@@ -1,0 +1,27 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+
+# tauri / rust
+/src-tauri/target/
+
+# misc
+.DS_Store
+*.pem
+.env*
+
+# debug
+*.log
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# local assistant instructions
+AGENTS.md
+CLAUDE.md
