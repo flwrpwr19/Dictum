@@ -90,9 +90,14 @@ src-tauri/target/release/bundle/dmg/Dictum_0.1.0_aarch64.dmg
 
 ### Development
 
+Run from this repo (not `apps/dictum-web` in Clarum — that is the marketing site only):
+
 ```bash
+bun install
 bun run desktop
 ```
+
+The desktop dev server uses **port 3004** so it can run alongside the website on **3003**. If the app window is blank white, you likely have the wrong Next server on 3004, or an old Dictum process still pointed at the website — quit Dictum and rerun `bun run desktop` here.
 
 ---
 

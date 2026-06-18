@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3003",
+    "dev": "next dev --port 3004",
     "build": "next build",
     "build:static": "TAURI=1 next build",
-    "start": "next start --port 3003",
+    "start": "next start --port 3004",
     "lint": "eslint",
     "tauri": "tauri",
     "desktop": "tauri dev",

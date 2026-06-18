@@ -5,7 +5,7 @@
   "identifier": "io.latticelabs.dictum",
   "build": {
     "frontendDist": "../out",
-    "devUrl": "http://localhost:3003",
+    "devUrl": "http://localhost:3004",
     "beforeDevCommand": {
       "script": "bun run dev",
       "wait": false

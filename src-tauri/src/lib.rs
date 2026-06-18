@@ -1,8 +1,11 @@
 mod audio;
+mod cloud;
+mod macos_pill;
 mod models;
 mod snippets;
 mod whisper;
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -12,8 +15,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    webview::PageLoadEvent,
     AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri::utils::config::{BackgroundThrottlingPolicy, Color};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{
     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
@@ -31,6 +36,8 @@ pub struct Config {
     pub auto_paste: bool,
     #[serde(default)]
     pub snippets: Vec<Snippet>,
+    #[serde(default)]
+    pub api_keys: HashMap<String, String>,
 }
 
 impl Default for Config {
@@ -40,6 +47,7 @@ impl Default for Config {
             hotkey: "CmdOrCtrl+Shift+D".into(),
             auto_paste: true,
             snippets: Vec::new(),
+            api_keys: HashMap::new(),
         }
     }
 }
@@ -47,6 +55,8 @@ impl Default for Config {
 pub struct AppState {
     audio_tx: Sender<AudioCmd>,
     recording: AtomicBool,
+    /// Set after the pill overlay is positioned once at launch — never reset on dictate.
+    pill_bootstrapped: AtomicBool,
     transcriber: Mutex<Option<(String, Arc<Transcriber>)>>,
     config: Mutex<Config>,
 }
@@ -84,12 +94,16 @@ fn get_config(state: State<AppState>) -> Config {
 }
 
 #[tauri::command]
-fn model_ready(app: AppHandle, id: String) -> bool {
-    models::is_downloaded(&app, &id)
+fn model_ready(app: AppHandle, state: State<AppState>, id: String) -> bool {
+    let cfg = state.config.lock();
+    models::model_ready(&app, &cfg.api_keys, &id)
 }
 
 #[tauri::command]
 fn prepare_model(app: AppHandle, id: String) {
+    if models::is_cloud(&id) {
+        return;
+    }
     std::thread::spawn(move || {
         if let Err(e) = models::ensure_model(&app, &id) {
             let _ = app.emit(
@@ -115,14 +129,16 @@ fn set_config(app: AppHandle, state: State<AppState>, config: Config) {
         }
     }
 
-    // Drop a cached transcriber if the model changed; pre-fetch the new one.
+    // Drop a cached transcriber if the model changed; pre-fetch local downloads.
     if previous.model != config.model {
         *state.transcriber.lock() = None;
-        let app2 = app.clone();
-        let id = config.model.clone();
-        std::thread::spawn(move || {
-            let _ = models::ensure_model(&app2, &id);
-        });
+        if !models::is_cloud(&config.model) {
+            let app2 = app.clone();
+            let id = config.model.clone();
+            std::thread::spawn(move || {
+                let _ = models::ensure_model(&app2, &id);
+            });
+        }
     }
 }
 
@@ -162,7 +178,7 @@ fn stop_dictation(app: AppHandle, state: State<AppState>) {
 
     // Heavy work off the UI/command thread.
     tauri::async_runtime::spawn(async move {
-        let result = run_transcription(&app, &cfg.model, samples, rate);
+        let result = run_transcription(&app, &cfg.model, &cfg.api_keys, samples, rate);
         match result {
             Ok((raw_text, duration_ms)) => {
                 let text = snippets::apply_snippets(&raw_text, &cfg.snippets);
@@ -210,9 +226,15 @@ fn toggle_dictation(app: AppHandle, state: State<AppState>) {
 fn run_transcription(
     app: &AppHandle,
     model: &str,
+    api_keys: &HashMap<String, String>,
     samples: Vec<f32>,
     rate: u32,
 ) -> anyhow::Result<(String, u64)> {
+    let started = std::time::Instant::now();
+    if models::is_cloud(model) {
+        let text = cloud::transcribe(model, api_keys, &samples, rate)?;
+        return Ok((text, started.elapsed().as_millis() as u64));
+    }
     let path = models::ensure_model(app, model)?;
     let state = app.state::<AppState>();
 
@@ -230,20 +252,46 @@ fn run_transcription(
     };
 
     let audio = whisper::resample_to_16k(&samples, rate);
-    let started = std::time::Instant::now();
     let text = transcriber.transcribe(&audio)?;
     Ok((text, started.elapsed().as_millis() as u64))
 }
 
 // ─── Pill overlay window ──────────────────────────────────────────────────────
 
-/// The speaking indicator stays on screen (Whispr-style). We only ensure it is
-/// visible and correctly positioned when dictation starts.
+/// Bring the pill forward when dictation starts — keep the user's chosen position.
 fn ensure_pill_visible(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("pill") {
-        position_pill(&win);
-        let _ = win.show();
+    let app = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
+        if let Some(pill) = app.get_webview_window("pill") {
+            let _ = pill.set_visible_on_all_workspaces(true);
+            let _ = pill.show();
+        }
+    });
+}
+
+fn bootstrap_pill(app: &AppHandle, win: &tauri::WebviewWindow) {
+    let state = app.state::<AppState>();
+    let first = !state.pill_bootstrapped.swap(true, Ordering::SeqCst);
+
+    if first {
+        macos_pill::clear_window_background(win);
+        position_pill(app, win);
     }
+    let _ = win.set_visible_on_all_workspaces(true);
+    let _ = win.show();
+    if first {
+        let _ = app.emit("flow://state", serde_json::json!({ "state": "idle" }));
+    }
+}
+
+/// Pill window setup must run on the AppKit main thread.
+fn schedule_pill_bootstrap(app: &AppHandle) {
+    let app = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
+        if let Some(pill) = app.get_webview_window("pill") {
+            bootstrap_pill(&app, &pill);
+        }
+    });
 }
 
 fn schedule_idle_state(app: &AppHandle) {
@@ -256,14 +304,25 @@ fn schedule_idle_state(app: &AppHandle) {
     });
 }
 
-fn position_pill(win: &tauri::WebviewWindow) {
-    if let Ok(Some(monitor)) = win.current_monitor() {
-        let screen = monitor.size();
-        if let Ok(size) = win.outer_size() {
-            let x = (screen.width as i32 - size.width as i32) / 2;
-            let y = screen.height as i32 - size.height as i32 - 48;
-            let _ = win.set_position(tauri::PhysicalPosition::new(x.max(0), y.max(0)));
-        }
+fn position_pill(app: &AppHandle, win: &tauri::WebviewWindow) {
+    let monitor = win
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten());
+
+    let Some(monitor) = monitor else {
+        return;
+    };
+
+    // work_area excludes the menu bar and Dock — sit just above the dock edge.
+    let work = monitor.work_area();
+    let gap = (12.0 * monitor.scale_factor()) as i32;
+
+    if let Ok(size) = win.outer_size() {
+        let x = work.position.x + (work.size.width as i32 - size.width as i32) / 2;
+        let y = work.position.y + work.size.height as i32 - size.height as i32 - gap;
+        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     }
 }
 
@@ -380,30 +439,51 @@ pub fn run() {
             app.manage(AppState {
                 audio_tx,
                 recording: AtomicBool::new(false),
+                pill_bootstrapped: AtomicBool::new(false),
                 transcriber: Mutex::new(None),
                 config: Mutex::new(config.clone()),
             });
 
             // Desktop shell only uses the workspace — keep marketing routes web-only.
             if let Some(main) = app.get_webview_window("main") {
-                let _ = main.eval("if (!location.pathname.startsWith('/app')) { window.location.replace('/app'); }");
+                let _ = main.eval(
+                    "if (!location.pathname.startsWith('/app')) { window.location.replace('/app'); }",
+                );
             }
 
             // Floating pill overlay window (frameless, transparent, on-top).
             let pill = WebviewWindowBuilder::new(app, "pill", WebviewUrl::App("/pill".into()))
                 .title("Dictum")
                 .inner_size(360.0, 64.0)
+                .min_inner_size(360.0, 64.0)
+                .max_inner_size(360.0, 64.0)
                 .decorations(false)
                 .transparent(true)
+                .background_color(Color(0, 0, 0, 0))
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .shadow(false)
                 .resizable(false)
                 .focused(false)
-                .visible(true)
+                .visible(false)
+                .accept_first_mouse(true)
+                .background_throttling(BackgroundThrottlingPolicy::Disabled)
+                .on_page_load({
+                    let handle = handle.clone();
+                    move |_win, payload| {
+                        if payload.event() == PageLoadEvent::Finished {
+                            schedule_pill_bootstrap(&handle);
+                        }
+                    }
+                })
                 .build()?;
-            let _ = pill.set_visible_on_all_workspaces(true);
-            position_pill(&pill);
+            let _ = pill;
+
+            let handle_delayed = handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                schedule_pill_bootstrap(&handle_delayed);
+            });
 
             // Register the configured global shortcut.
             if let Some(sc) = parse_shortcut(&config.hotkey) {
@@ -435,12 +515,14 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Warm the default model in the background.
+            // Warm the default local model in the background.
             let warm = handle.clone();
             let model_id = config.model.clone();
-            std::thread::spawn(move || {
-                let _ = models::ensure_model(&warm, &model_id);
-            });
+            if !models::is_cloud(&model_id) {
+                std::thread::spawn(move || {
+                    let _ = models::ensure_model(&warm, &model_id);
+                });
+            }
 
             Ok(())
         })

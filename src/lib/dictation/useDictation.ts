@@ -10,6 +10,8 @@ import {
   type Snippet,
 } from "@/lib/snippets";
 import { DEFAULT_MODEL, type WhisperModelId } from "@/lib/whisper/models";
+import { MODEL_CATALOG } from "@/lib/models/catalog";
+import type { DictumModel } from "@/lib/models/types";
 import type { Device, WorkerResponse } from "@/lib/whisper/protocol";
 
 export type { Device } from "@/lib/whisper/protocol";
@@ -41,7 +43,11 @@ const BAR_COUNT = 28;
 const HISTORY_KEY = "dictum.history.v1";
 const SETTINGS_KEY = "dictum.settings.v1";
 
-type Settings = { model: WhisperModelId };
+type Settings = { model: string };
+
+function isWebWhisperId(id: string): id is WhisperModelId {
+  return id === "tiny" || id === "base" || id === "small";
+}
 
 function loadHistory(): Dictation[] {
   if (typeof window === "undefined") return [];
@@ -83,9 +89,18 @@ export function useDictation() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [lastText, setLastText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [model, setModelState] = useState<WhisperModelId>(DEFAULT_MODEL);
+  const [model, setModelState] = useState<string>(DEFAULT_MODEL);
   const [autoPaste, setAutoPasteState] = useState(true);
   const [hotkey, setHotkey] = useState("CmdOrCtrl+Shift+D");
+  const [catalog, setCatalog] = useState<DictumModel[]>(MODEL_CATALOG);
+  const [apiKeys, setApiKeysState] = useState<Record<string, string>>({});
+  const [readyByModel, setReadyByModel] = useState<Record<string, boolean>>({});
+  const [downloadPctByModel, setDownloadPctByModel] = useState<
+    Record<string, number>
+  >({});
+  const [downloadingModel, setDownloadingModel] = useState<string | null>(
+    null
+  );
   const [history, setHistory] = useState<Dictation[]>([]);
   const [snippets, setSnippetsState] = useState<Snippet[]>([]);
   const snippetsRef = useRef<Snippet[]>([]);
@@ -110,6 +125,43 @@ export function useDictation() {
   useEffect(() => {
     nativeRef.current = native;
   }, [native]);
+
+  const buildNativeConfig = useCallback(
+    (overrides: {
+      model?: string;
+      hotkey?: string;
+      auto_paste?: boolean;
+      snippets?: { phrase: string; expansion: string }[];
+      api_keys?: Record<string, string>;
+    } = {}) => ({
+      model: overrides.model ?? model,
+      hotkey: overrides.hotkey ?? hotkey,
+      auto_paste: overrides.auto_paste ?? autoPaste,
+      snippets:
+        overrides.snippets ??
+        snippetsRef.current.map(({ phrase, expansion }) => ({
+          phrase,
+          expansion,
+        })),
+      api_keys: overrides.api_keys ?? apiKeys,
+    }),
+    [model, hotkey, autoPaste, apiKeys]
+  );
+
+  const isModelReady = useCallback(
+    (id: string) => {
+      const entry = catalog.find((m) => m.id === id);
+      if (!entry) return false;
+      if (entry.kind === "cloud") {
+        if (!native) return false;
+        const provider = entry.provider;
+        return Boolean(provider && apiKeys[provider]?.trim());
+      }
+      if (!native) return isWebWhisperId(id);
+      return readyByModel[id] ?? false;
+    },
+    [catalog, native, apiKeys, readyByModel]
+  );
 
   const persistResult = useCallback(
     (text: string, durationMs: number, recordedMs: number) => {
@@ -143,7 +195,8 @@ export function useDictation() {
   useEffect(() => {
     setHistory(loadHistory());
     if (!native) {
-      setModelState(loadSettings().model);
+      const saved = loadSettings().model;
+      setModelState(isWebWhisperId(saved) ? saved : DEFAULT_MODEL);
       setSnippetsState(loadSnippets());
     }
   }, [native]);
@@ -160,15 +213,20 @@ export function useDictation() {
       if (disposed) return;
 
       try {
+        const models = await invoke<DictumModel[]>("get_models");
+        setCatalog(models);
+
         const cfg = await invoke<{
-          model: WhisperModelId;
+          model: string;
           hotkey: string;
           auto_paste: boolean;
           snippets?: { phrase: string; expansion: string }[];
+          api_keys?: Record<string, string>;
         }>("get_config");
         setModelState(cfg.model);
         setHotkey(cfg.hotkey);
         setAutoPasteState(cfg.auto_paste);
+        setApiKeysState(cfg.api_keys ?? {});
         setSnippetsState(
           (cfg.snippets ?? []).map((s) => ({
             id: crypto.randomUUID(),
@@ -176,7 +234,18 @@ export function useDictation() {
             expansion: s.expansion,
           }))
         );
-        const ready = await invoke<boolean>("model_ready", { id: cfg.model });
+
+        const readiness: Record<string, boolean> = {};
+        await Promise.all(
+          models.map(async (m) => {
+            readiness[m.id] = await invoke<boolean>("model_ready", {
+              id: m.id,
+            });
+          })
+        );
+        setReadyByModel(readiness);
+
+        const ready = readiness[cfg.model] ?? false;
         setEngineStatus(ready ? "ready" : "downloading");
         if (ready) setDownloadPct(100);
       } catch {
@@ -234,8 +303,16 @@ export function useDictation() {
 
       unlisteners.push(
         await listen<{ id: string; pct: number }>("model://progress", (e) => {
-          setDownloadPct(e.payload.pct);
-          setEngineStatus(e.payload.pct >= 100 ? "ready" : "downloading");
+          const { id, pct } = e.payload;
+          setDownloadPctByModel((prev) => ({ ...prev, [id]: pct }));
+          if (pct >= 100) {
+            setReadyByModel((prev) => ({ ...prev, [id]: true }));
+            setDownloadingModel((current) => (current === id ? null : current));
+          }
+          if (id === model) {
+            setDownloadPct(pct);
+            setEngineStatus(pct >= 100 ? "ready" : "downloading");
+          }
         })
       );
     })();
@@ -245,7 +322,7 @@ export function useDictation() {
       unlisteners.forEach((u) => u());
       if (timerRef.current) cancelAnimationFrame(timerRef.current);
     };
-  }, [native, persistResult]);
+  }, [native, persistResult, model]);
 
   // ─── Web engine (transformers.js worker) ─────────────────────────────────
   useEffect(() => {
@@ -313,14 +390,57 @@ export function useDictation() {
 
   const preload = useCallback(() => {
     if (native) return;
+    if (!isWebWhisperId(model)) return;
     if (engineStatus === "cold") {
       setEngineStatus("warming");
       workerRef.current?.postMessage({ type: "load", model });
     }
   }, [native, engineStatus, model]);
 
+  const prepareModel = useCallback(
+    (id: string) => {
+      if (!native) return;
+      setDownloadingModel(id);
+      setDownloadPctByModel((prev) => ({ ...prev, [id]: 0 }));
+      void (async () => {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("prepare_model", { id });
+      })();
+    },
+    [native]
+  );
+
+  const setApiKey = useCallback(
+    (provider: string, key: string) => {
+      setApiKeysState((prev) => {
+        const next = { ...prev, [provider]: key };
+        if (native) {
+          void (async () => {
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("set_config", {
+              config: buildNativeConfig({ api_keys: next }),
+            });
+            const cloudIds = catalog
+              .filter((m) => m.kind === "cloud" && m.provider === provider)
+              .map((m) => m.id);
+            if (key.trim()) {
+              setReadyByModel((prevReady) => {
+                const updated = { ...prevReady };
+                for (const id of cloudIds) updated[id] = true;
+                return updated;
+              });
+            }
+          })();
+        }
+        return next;
+      });
+    },
+    [native, buildNativeConfig, catalog]
+  );
+
   const setModel = useCallback(
-    (next: WhisperModelId) => {
+    (next: string) => {
+      if (!isModelReady(next)) return;
       setModelState(next);
       setEngineStatus("warming");
       setDownloadPct(0);
@@ -328,20 +448,22 @@ export function useDictation() {
         void (async () => {
           const { invoke } = await import("@tauri-apps/api/core");
           await invoke("set_config", {
-            config: {
-              model: next,
-              hotkey,
-              auto_paste: autoPaste,
-              snippets: snippetsRef.current.map(({ phrase, expansion }) => ({
-                phrase,
-                expansion,
-              })),
-            },
+            config: buildNativeConfig({ model: next }),
           });
-          await invoke("prepare_model", { id: next });
+          const entry = catalog.find((m) => m.id === next);
+          if (entry?.kind === "local") {
+            await invoke("prepare_model", { id: next });
+            const ready = await invoke<boolean>("model_ready", { id: next });
+            setEngineStatus(ready ? "ready" : "downloading");
+            if (ready) setDownloadPct(100);
+          } else {
+            setEngineStatus("ready");
+            setDownloadPct(100);
+          }
         })();
         return;
       }
+      if (!isWebWhisperId(next)) return;
       try {
         window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ model: next }));
       } catch {
@@ -349,7 +471,7 @@ export function useDictation() {
       }
       workerRef.current?.postMessage({ type: "load", model: next });
     },
-    [native, hotkey, autoPaste]
+    [native, buildNativeConfig, catalog, isModelReady]
   );
 
   const setSnippets = useCallback(
@@ -359,24 +481,17 @@ export function useDictation() {
       if (!native) return;
       void (async () => {
         const { invoke } = await import("@tauri-apps/api/core");
-        const cfg = await invoke<{
-          model: WhisperModelId;
-          hotkey: string;
-          auto_paste: boolean;
-          snippets?: { phrase: string; expansion: string }[];
-        }>("get_config");
         await invoke("set_config", {
-          config: {
-            ...cfg,
+          config: buildNativeConfig({
             snippets: next.map(({ phrase, expansion }) => ({
               phrase,
               expansion,
             })),
-          },
+          }),
         });
       })();
     },
-    [native]
+    [native, buildNativeConfig]
   );
 
   const setAutoPaste = useCallback(
@@ -386,19 +501,11 @@ export function useDictation() {
       void (async () => {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("set_config", {
-          config: {
-            model,
-            hotkey,
-            auto_paste: next,
-            snippets: snippetsRef.current.map(({ phrase, expansion }) => ({
-              phrase,
-              expansion,
-            })),
-          },
+          config: buildNativeConfig({ auto_paste: next }),
         });
       })();
     },
-    [native, model, hotkey]
+    [native, buildNativeConfig]
   );
 
   // ─── Web capture ──────────────────────────────────────────────────────────
@@ -510,6 +617,7 @@ export function useDictation() {
     setFlowState("transcribing");
     try {
       const audio = await blobToPcm(blob);
+      if (!isWebWhisperId(model)) return;
       workerRef.current?.postMessage({
         type: "transcribe",
         id: crypto.randomUUID(),
@@ -606,11 +714,19 @@ export function useDictation() {
     model,
     autoPaste,
     hotkey,
+    catalog,
+    apiKeys,
+    readyByModel,
+    downloadPctByModel,
+    downloadingModel,
     history,
     snippets,
     setSnippets,
     setModel,
     setAutoPaste,
+    setApiKey,
+    prepareModel,
+    isModelReady,
     preload,
     start,
     stop,

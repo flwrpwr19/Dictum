@@ -17,9 +17,9 @@ import {
 import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/dictation/useDictation";
 import { newSnippet } from "@/lib/snippets";
-import { WHISPER_MODELS } from "@/lib/whisper/models";
 import { AppSidebar, type WorkspaceView } from "./AppSidebar";
 import { FlowPill } from "./FlowPill";
+import { ModelsView } from "./ModelsView";
 import { Waveform } from "./Waveform";
 
 const ease = [0.16, 1, 0.3, 1] as const;
@@ -542,6 +542,18 @@ export function Workspace() {
                 </motion.div>
               )}
 
+              {view === "models" && (
+                <motion.div
+                  key="models"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.35, ease }}
+                >
+                  <ModelsView ctrl={ctrl} />
+                </motion.div>
+              )}
+
               {view === "settings" && (
                 <motion.div
                   key="settings"
@@ -555,52 +567,27 @@ export function Workspace() {
                       Settings
                     </h1>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      Choose the local model and review your privacy posture.
+                      Dictation shortcuts, privacy, and engine details.
                     </p>
                   </header>
 
                   <section className="mb-6 rounded-2xl border border-dictum-border bg-dictum-panel p-6 ">
                     <h2 className="mb-1 text-sm font-medium text-foreground">
-                      Whisper model
+                      Active model
                     </h2>
-                    <p className="mb-4 text-xs text-muted-foreground">
-                      Larger models are more accurate but take longer to load and
-                      run. Switching re-downloads once, then caches.
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {ctrl.catalog.find((m) => m.id === ctrl.model)?.label ??
+                        ctrl.model}
+                      {" · "}
+                      <button
+                        type="button"
+                        onClick={() => setView("models")}
+                        className="text-dictum-cyan hover:underline"
+                      >
+                        Change in Models
+                      </button>
                     </p>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      {WHISPER_MODELS.map((m) => {
-                        const active = ctrl.model === m.id;
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => ctrl.setModel(m.id)}
-                            className={cn(
-                              "rounded-xl border p-4 text-left transition-all",
-                              active
-                                ? "border-dictum-iris/40 bg-dictum-iris/[0.08]"
-                                : "border-white/8 bg-black/25 hover:border-white/15"
-                            )}
-                          >
-                            <div className="mb-1 flex items-center justify-between">
-                              <span className="text-sm font-medium text-foreground">
-                                {m.label}
-                              </span>
-                              {active && (
-                                <Check className="h-4 w-4 text-dictum-cyan" />
-                              )}
-                            </div>
-                            <div className="mb-2 text-[11px] uppercase tracking-widest text-muted-foreground">
-                              {m.size}
-                            </div>
-                            <p className="text-xs leading-relaxed text-muted-foreground">
-                              {m.blurb}
-                            </p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Cpu className="h-3.5 w-3.5 text-dictum-cyan" />
                       Running on{" "}
                       <span className="text-foreground">
@@ -706,7 +693,7 @@ export function Workspace() {
         </main>
       </div>
 
-      {(!mounted || !ctrl.native) && <FlowPill ctrl={ctrl} />}
+      {mounted && <FlowPill ctrl={ctrl} />}
 
       <AnimatePresence>
         {ctrl.error && (

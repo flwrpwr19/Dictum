@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   ...(isTauri
     ? {
       output: "export",
+      trailingSlash: true,
       images: { unoptimized: true },
     }
     : {

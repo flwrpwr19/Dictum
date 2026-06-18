@@ -5,6 +5,7 @@ import {
   BookText,
   Clock,
   Cpu,
+  Layers,
   PenLine,
   Settings2,
   type LucideIcon,
@@ -12,12 +13,13 @@ import {
 import { cn } from "@/lib/utils";
 import type { Device, EngineStatus } from "@/lib/dictation/useDictation";
 
-export type WorkspaceView = "capture" | "history" | "dictionary" | "settings";
+export type WorkspaceView = "capture" | "history" | "dictionary" | "models" | "settings";
 
 const NAV: { id: WorkspaceView; label: string; icon: LucideIcon }[] = [
   { id: "capture", label: "Capture", icon: PenLine },
   { id: "history", label: "History", icon: Clock },
   { id: "dictionary", label: "Snippets", icon: BookText },
+  { id: "models", label: "Models", icon: Layers },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
 
