@@ -1,8 +1,8 @@
 # Dictum
 
-Talk at full speed — text stays on your Mac.
+Speak naturally — Dictum turns your words into text on your Mac and keeps your audio private.
 
-Dictum is a native macOS dictation app that runs Whisper locally. It offers a global hotkey, a floating speaking pill, and optional auto‑paste into other apps. Your audio never leaves the device. Requires macOS 11+.
+Dictum is a native macOS dictation app that runs Whisper on your device. It provides a global hotkey, a small floating “speaking pill” you can click or drag, and optional auto‑paste into other apps. Requires macOS 11+.
 
 ## Quick install
 
@@ -18,7 +18,7 @@ xattr -cr /Applications/Dictum.app
 4. Launch Dictum and grant Microphone access.  
 For auto‑paste, enable Accessibility: System Settings → Privacy & Security → Accessibility → Dictum
 
-> Note: Unsigned builds will be blocked by Gatekeeper on first open until notarized.
+> Note: If macOS warns you when opening an unsigned app, that’s expected for builds that haven’t been notarized yet.
 
 ## Controls
 
