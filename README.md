@@ -1,131 +1,40 @@
-<div align="center">
+# Dictum
 
-<br />
+Talk at full speed — text stays on your Mac.
 
-<img src="https://img.shields.io/badge/●-Dictum-8b7bff?style=for-the-badge&labelColor=0b0c10" alt="Dictum" />
+Dictum is a native macOS dictation app that runs Whisper locally. It offers a global hotkey, a floating speaking pill, and optional auto‑paste into other apps. Your audio never leaves the device. Requires macOS 11+.
 
-<br /><br />
+## Quick install
 
-<h1>Talk at full speed.<br/>Text stays on your Mac.</h1>
-
-<p>
-  <strong>Dictum</strong> is a native macOS dictation app — local Whisper, global hotkey,<br/>
-  floating speaking pill, auto-paste. Your audio never leaves the device.
-</p>
-
-<p>
-  <img src="https://img.shields.io/badge/macOS-11%2B-111218?style=flat-square&logo=apple&logoColor=f4f4f7" alt="macOS 11+" />
-  <img src="https://img.shields.io/badge/Whisper-on--device-111218?style=flat-square&labelColor=0b0c10&color=67e8f9" alt="On-device" />
-  <img src="https://img.shields.io/badge/Metal-accelerated-111218?style=flat-square&labelColor=0b0c10&color=8b7bff" alt="Metal" />
-  <img src="https://img.shields.io/badge/License-private-111218?style=flat-square&labelColor=0b0c10&color=8a90a4" alt="License" />
-</p>
-
-<br />
-
-</div>
-
----
-
-## Install
-
-> **Unsigned build.** macOS Gatekeeper will block the app on first open. This is expected until the app is notarized.
-
-### 1 · Download
-
-Grab the latest **`.dmg`** from [**Releases**](https://github.com/flwrpwr19/Dictum/releases/latest).
-
-### 2 · Clear quarantine
-
-After downloading, remove the quarantine flag macOS attaches to unsigned files:
-
+1. Download the latest `.dmg` from Releases: https://github.com/flwrpwr19/Dictum/releases/latest
+2. Remove macOS quarantine on the downloaded DMG:
 ```bash
 xattr -cr ~/Downloads/Dictum_*.dmg
 ```
-
-### 3 · Install
-
-Open the DMG, drag **Dictum** into **Applications**, then clear quarantine on the app itself:
-
+3. Open the DMG and drag Dictum to Applications, then clear quarantine on the installed app:
 ```bash
 xattr -cr /Applications/Dictum.app
 ```
+4. Launch Dictum and grant Microphone access.  
+For auto‑paste, enable Accessibility: System Settings → Privacy & Security → Accessibility → Dictum
 
-### 4 · Launch
-
-Open Dictum from Applications. Grant **Microphone** when prompted.
-
-For **auto-paste** into other apps, also enable **Accessibility**:
-**System Settings → Privacy & Security → Accessibility → Dictum**.
-
----
+> Note: Unsigned builds will be blocked by Gatekeeper on first open until notarized.
 
 ## Controls
 
-| Action | Default |
-| --- | --- |
-| Toggle dictation | `⌘` `⇧` `D` |
-| Speaking pill | Always-on-top overlay — click or drag |
-| Tray menu | Start/stop · Open · Quit |
+- Toggle dictation: ⌘ ⇧ D (changeable in Settings)
+- Speaking pill: always-on-top overlay — click or drag
+- Tray menu: Start/Stop · Open · Quit
 
-Change the hotkey in **Settings** inside the app.
+## Architecture (high level)
 
----
+- Shell: Tauri — global hotkey, tray, auto-paste  
+- Transcription: whisper.cpp via whisper-rs (Metal accelerated)  
+- Audio: cpal — live waveform levels  
+- UI: Next.js · React · Framer Motion
 
-## Build the DMG
-
-Requirements: **macOS**, **Xcode CLI tools**, **Rust**, **Bun**.
-
-```bash
-bun install
-bun run build:dmg
-```
-
-Output:
-
-```text
-src-tauri/target/release/bundle/dmg/Dictum_0.1.0_aarch64.dmg
-```
-
-(Exact filename depends on version and architecture.)
-
-### Development
-
-Run from this repo (not `apps/dictum-web` in Clarum — that is the marketing site only):
-
-```bash
-bun install
-bun run desktop
-```
-
-The desktop dev server uses **port 3004** so it can run alongside the website on **3003**. If the app window is blank white, you likely have the wrong Next server on 3004, or an old Dictum process still pointed at the website — quit Dictum and rerun `bun run desktop` here.
+Flow: hotkey → mic capture → local Whisper → snippet expansion → clipboard + auto‑paste → workspace history
 
 ---
 
-## Architecture
-
-| Layer | Stack |
-| --- | --- |
-| Shell | Tauri 2 · global hotkey · tray · auto-paste |
-| Transcription | whisper.cpp via whisper-rs · Metal |
-| Audio | cpal · live waveform levels |
-| UI | Next.js · React · Framer Motion |
-
-**Flow:** hotkey → mic capture → local Whisper → snippets expansion → clipboard + auto-paste → workspace history.
-
----
-
-## Website
-
-Marketing pages live in the [**Clarum**](https://github.com/SinergaOptima/Clarum) monorepo under `apps/dictum-web`.
-
----
-
-<div align="center">
-
-<br />
-
-<sub>Lattice Labs · Dictum v0.1.0</sub>
-
-<br /><br />
-
-</div>
+Lattice Labs · Dictum v0.1.0
